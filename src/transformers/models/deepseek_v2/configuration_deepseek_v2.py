@@ -139,7 +139,7 @@ class DeepseekV2Config(PreTrainedConfig):
 
     def __init__(
         self,
-        vocab_size: Optional[int] = 32000,
+        vocab_size: Optional[int] = 102400,
         hidden_size: Optional[int] = 4096,
         intermediate_size: Optional[int] = 11008,
         num_hidden_layers: Optional[int] = 32,

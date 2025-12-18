@@ -85,6 +85,7 @@ else:
             ("data2vec-vision", ("BeitImageProcessor", "BeitImageProcessorFast")),
             ("deepseek_vl", ("DeepseekVLImageProcessor", "DeepseekVLImageProcessorFast")),
             ("deepseek_vl_hybrid", ("DeepseekVLHybridImageProcessor", "DeepseekVLHybridImageProcessorFast")),
+            ("deepseek_vl_v2", ("DeepseekVLV2ImageProcessor", "DeepseekVLV2ImageProcessorFast")),
             ("deformable_detr", ("DeformableDetrImageProcessor", "DeformableDetrImageProcessorFast")),
             ("deit", ("DeiTImageProcessor", "DeiTImageProcessorFast")),
             ("depth_anything", ("DPTImageProcessor", "DPTImageProcessorFast")),
