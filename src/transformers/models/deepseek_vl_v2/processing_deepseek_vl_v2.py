@@ -40,8 +40,8 @@ class DeepseekVLV2Processor(ProcessorMixin):
         tokenizer,
         chat_template=None,
     ):
-        self.image_token = tokenizer.image_token
-        self.image_token = tokenizer.image_token
+        # self.image_token = tokenizer.image_token
+        self.image_token = "<image>"
         # self.num_image_tokens = num_image_tokens
 
         super().__init__(image_processor, tokenizer, chat_template=chat_template)

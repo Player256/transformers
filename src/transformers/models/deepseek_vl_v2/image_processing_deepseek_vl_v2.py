@@ -8,7 +8,7 @@ from typing import Optional, Union
 
 import numpy as np
 import torch
-from PIL import Image
+from PIL import Image, ImageOps
 from torchvision import transforms
 
 from ...image_processing_utils import BaseImageProcessor, get_size_dict
@@ -99,12 +99,12 @@ class DeepseekVLV2ImageProcessor(BaseImageProcessor):
         self.patch_size = patch_size
         self.image_size = 384
 
-        self.transform = transforms.Compose(
-            [
-                transforms.ToTensor(),
-                transforms.Normalize(mean=image_mean, std=image_std),
-            ]
-        )
+        # self.transform = transforms.Compose(
+        #     [
+        #         transforms.ToTensor(),
+        #         transforms.Normalize(mean=image_mean, std=image_std),
+        #     ]
+        # )
 
     def resize(
         self,
@@ -225,6 +225,12 @@ class DeepseekVLV2ImageProcessor(BaseImageProcessor):
         if not isinstance(image, Image.Image):
             image = Image.fromarray(image)
 
+        # Create transform on the fly
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(mean=self.image_mean, std=self.image_std),
+        ])
+        
         w, h = image.size
         best_w, best_h = self.select_best_resolution((w, h), self.candidate_resolutions)
 
@@ -248,8 +254,8 @@ class DeepseekVLV2ImageProcessor(BaseImageProcessor):
                 )
                 local_tiles.append(tile)
 
-        global_tensor = self.transform(global_img)
-        local_tensors = [self.transform(t) for t in local_tiles]
+        global_tensor = transform(global_img)
+        local_tensors = [transform(t) for t in local_tiles]
 
         all_tiles = torch.stack([global_tensor] + local_tensors)
 

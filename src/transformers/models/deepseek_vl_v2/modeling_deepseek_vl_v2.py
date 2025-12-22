@@ -168,7 +168,7 @@ class DeepseekVLV2Model(DeepseekVLV2PreTrainedModel):
 
         self.gradient_checkpointing = False
         self.projector = MlpProjector(config.projector_config)
-        self.language = AutoModel.from_config(config.text_config)
+        # self.language = AutoModel.from_config(config.text_config)
         # Initialize weights and apply final processing.
         self.post_init()
 
@@ -348,7 +348,7 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel, GenerationMixin):
             if attention_mask is not None:
                 attention_mask = attention_mask.to(inputs_embeds.device)
 
-        outputs = self.language.forward(
+        outputs = self.model.language_model.forward(
             input_ids=None,
             attention_mask=attention_mask,
             position_ids=position_ids,
@@ -379,7 +379,7 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel, GenerationMixin):
         num_logits_to_keep=None,
         **kwargs,
     ):
-        model_inputs = self.language.prepare_inputs_for_generation(
+        model_inputs = self.model.language_model.prepare_inputs_for_generation(
             input_ids,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,
@@ -411,7 +411,7 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel, GenerationMixin):
         **ignore_kwargs,
     ):
         if images is None or images_spatial_crop.sum() == 0:
-            return self.language_model.get_input_embeddings()(input_ids)
+            return self.model.language_model.get_input_embeddings()(input_ids)
 
         bs, max_n_images, _ = images_spatial_crop.shape
         batch_num_tiles = [0 for _ in range(bs)]
@@ -432,13 +432,13 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel, GenerationMixin):
         assert total_tiles.shape[0] == sum(batch_num_tiles)
 
         if total_tiles.shape[0] == 0:
-            return self.language_model.get_input_embeddings()(input_ids)
+            return self.model.language_model.get_input_embeddings()(input_ids)
 
         images_embeds = self.get_image_features(total_tiles)
         _, hw, n_dim = images_embeds.shape
         h = w = int(hw**0.5)
 
-        inputs_embeds = self.language_model.get_input_embeddings()(input_ids)
+        inputs_embeds = self.model.language_model.get_input_embeddings()(input_ids)
 
         tile_index = 0
         for idx in range(images_spatial_crop.shape[0]):

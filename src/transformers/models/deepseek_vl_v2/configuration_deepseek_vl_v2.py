@@ -62,7 +62,6 @@ class DeepseekVLV2Config(PretrainedConfig):
         tile_tag: str = "2D",
         global_view_pos: str = "head",
         candidate_resolutions: tuple[tuple[int, int]] = ((384, 384),),
-        n_embed: int = 512,
         text_config: dict = None,
         vision_config: dict = None,
         projector_config: dict = None,
@@ -72,7 +71,6 @@ class DeepseekVLV2Config(PretrainedConfig):
         self.tile_tag = tile_tag
         self.global_view_pos = global_view_pos
         self.candidate_resolutions = candidate_resolutions
-        self.n_embed = n_embed
 
         if text_config is None:
             text_config = {}

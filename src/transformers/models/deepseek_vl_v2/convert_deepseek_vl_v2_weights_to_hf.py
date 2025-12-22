@@ -41,8 +41,10 @@ ORIGINAL_TO_CONVERTED_KEY_MAPPING = {
     r"projector.layers.2.(weight|bias)":               r"model.projector.layers.2.\1",
 
     # Deepseek V2 (Text Model)
-    r"language_model.model.(\w+)":                   r"model.language.\1",
-    r"language_model.lm_head.(weight|bias)":         r"model.lm_head.\1",
+    r"language.model.(\w+)":                   r"model.language_model.\1",
+    r"language.lm_head.(weight|bias)":         r"model.lm_head.\1",
+    r"image_newline":                          r"model.image_newline",
+    r"view_seperator":                         r"model.view_separator",
 }
 # fmt: on
 
@@ -59,8 +61,8 @@ CHAT_TEMPLATE = (
     "{% endfor %}\n"
     "<|sft▁end|>\n"
     "{% elif message['role'] == 'assistant' %}"
-    "{{ message['content'][0]['text'] }}"
-    "<|end▁of▁sentence|>\n"
+    "{{ message['content'][0]['text'] if message['content'] and message['content']|length > 0 else '' }}"
+    "<|end_of_sentence|>\n"
     "{% endif %}"
     "{% endfor %}"
     "{% if add_generation_prompt %}"
@@ -87,9 +89,13 @@ def convert_old_keys_to_new_keys(state_dict_keys: dict):
 def get_qkv_state_dict(key, parameter):
     qkv_state_dict = {}
     placeholder = re.search(r"(\(.*?\))", key).group(1)  # finds   "(query|key|value)"
-    replacements_keys = placeholder[1:-1].split("|")  # creates ['query', 'key', 'value']
+    replacements_keys = placeholder[1:-1].split(
+        "|"
+    )  # creates ['query', 'key', 'value']
     replacements_vals = torch.split(
-        parameter, split_size_or_sections=parameter.size(0) // len(replacements_keys), dim=0
+        parameter,
+        split_size_or_sections=parameter.size(0) // len(replacements_keys),
+        dim=0,
     )
     for replacement_key, replacement_val in zip(replacements_keys, replacements_vals):
         qkv_state_dict[key.replace(placeholder, replacement_key)] = replacement_val
@@ -169,35 +175,7 @@ def convert_model(
         # If the input path is not a HF repo ID, assume it's a local path
         input_path = hf_repo_id
 
-    # ------------------------------------------------------------
-    # Create and save config
-    # ------------------------------------------------------------
-
-    config = DeepseekVLV2Config(
-        text_config={
-            "hidden_size": 2048,
-            "intermediate_size": 5632,
-            "max_position_embeddings": 16384,
-            "num_attention_heads": 16,
-            "num_hidden_layers": 24,
-            "vocab_size": 102400,
-        },
-        vision_config={
-            "hidden_size": 1024,
-            "intermediate_size": 4096,
-            "image_size": 384,
-            "patch_size": 16,
-            "hidden_act": "gelu",
-            "vision_use_head": False,
-            "num_attention_heads": 16,
-            "num_hidden_layers": 24,
-        },
-    )
-
     # save config
-    if output_dir:
-        config.save_pretrained(output_dir)
-        print("Model config saved successfully...")
 
     # ------------------------------------------------------------
     # Convert processor
@@ -208,13 +186,15 @@ def convert_model(
         image_std=IMAGENET_STANDARD_STD,
     )
 
-    tokenizer = AutoTokenizer.from_pretrained(
-        input_path,
-        extra_special_tokens={
-            "pad_token": "<｜end▁of▁sentence｜>",
-            "image_token": "<image_placeholder>",
-        },
-    )
+    tokenizer = AutoTokenizer.from_pretrained(input_path)
+
+    if "<image>" not in tokenizer.additional_special_tokens:
+        tokenizer.add_special_tokens(
+            {
+                "additional_special_tokens": tokenizer.additional_special_tokens
+                + ["<image>"]
+            }
+        )
 
     processor = DeepseekVLV2Processor(
         image_processor=image_processor,
@@ -229,24 +209,111 @@ def convert_model(
         print(f"Pushing processor to hub at {output_hub_path}...")
         processor.push_to_hub(output_hub_path)
 
-    # ------------------------------------------------------------
-    # Convert weights
-    # ------------------------------------------------------------
-
-    print("Creating empty model...")
-    with init_empty_weights():
-        model = DeepseekVLV2ForCausalLM(config)
-
     # Load and convert state dict
     print("Loading state dict...")
     state_dict = load_model_state_dict(input_path)
     state_dict = update_state_dict(state_dict)
 
+    vision_width = state_dict[
+        "model.vision_model.vision_model.embeddings.patch_embedding.weight"
+    ].shape[0]
+
+    lang_hidden = state_dict["model.image_newline"].shape[0]  # 2048
+
+    vocab_size = state_dict["model.language_model.embed_tokens.weight"].shape[0]
+    projector_output = state_dict["model.projector.layers.0.weight"].shape[0]
+
+    config = DeepseekVLV2Config(
+        candidate_resolutions=[
+            [384, 384],
+            [384, 768],
+            [768, 384],
+            [384, 1152],
+            [1152, 384],
+            [384, 1536],
+            [1536, 384],
+            [768, 768],
+            [384, 1920],
+            [1920, 384],
+            [384, 2304],
+            [2304, 384],
+            [768, 1152],
+            [1152, 768],
+            [384, 2688],
+            [2688, 384],
+            [384, 3072],
+            [3072, 384],
+            [768, 1536],
+            [1536, 768],
+            [384, 3456],
+            [3456, 384],
+            [1152, 1152],
+        ],
+        global_view_pos="head",
+        text_config={
+            "architectures": ["DeepseekV2ForCausalLM"],
+            "auto_map": {
+                "AutoConfig": "configuration_deepseek.DeepseekV2Config",
+                "AutoModel": "modeling_deepseek.DeepseekV2Model",
+                "AutoModelForCausalLM": "modeling_deepseek.DeepseekV2ForCausalLM",
+            },
+            "bos_token_id": 0,
+            "eos_token_id": 1,
+            "first_k_dense_replace": 1,
+            "hidden_size": lang_hidden,
+            "intermediate_size": 6848,
+            "kv_lora_rank": None,
+            "lm_head": True,
+            "max_position_embeddings": 4096,
+            "model_type": "deepseek_v2",
+            "moe_intermediate_size": 896,
+            "n_group": 1,
+            "n_routed_experts": 64,
+            "n_shared_experts": 2,
+            "num_attention_heads": 10,
+            "num_experts_per_tok": 6,
+            "num_hidden_layers": 12,
+            "num_key_value_heads": 10,
+            "q_lora_rank": None,
+            "qk_nope_head_dim": 0,
+            "qk_rope_head_dim": 0,
+            "rm_head": False,
+            "topk_group": 1,
+            "topk_method": "greedy",
+            "torch_dtype": "bfloat16",
+            "use_mla": False,
+            "v_head_dim": 0,
+            "vocab_size": vocab_size,
+        },
+        model_type="deepseek_vl_v2",
+        projector_config={
+            "model_type": "mlp_projector",
+            "n_embed": projector_output,
+        },
+        tile_tag="2D",
+        torch_dtype="bfloat16",
+        vision_config={
+            "layers": 27,
+            "mlp_ratio": 3.7362,
+            "model_name": "siglip_so400m_patch14_384",
+            "model_type": "siglip_vision_model",
+            "patch_size": 14,
+            "width": 1152,
+            "hidden_size": vision_width,
+            "intermediate_size": int(vision_width * 3.7362),
+            "image_size": 384,
+        },
+    )
+    if output_dir:
+        config.save_pretrained(output_dir)
+        print("Model config saved successfully...")
+
+    print("Creating empty model...")
+
+    model = DeepseekVLV2ForCausalLM(config)
     # Load converted state dict
     print("Loading converted weights into model...")
     info = model.load_state_dict(state_dict, strict=False, assign=True)
-    if len(info.missing_keys) > 0:
-        raise ValueError(f"Missing keys: {info.missing_keys}")
 
     # Tie weights before any device mapping
     print("Tying weights...")
@@ -274,7 +341,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--hf_repo_id",
-        default="deepseek-ai/deepseek-vl2-small",
+        default="deepseek-ai/deepseek-vl2-tiny",
         help="Location of official weights from DeepseekAI on HF",
     )
     parser.add_argument(
@@ -288,7 +355,10 @@ def main():
         help="Repository ID to push model to hub (e.g. 'username/model-name')",
     )
     parser.add_argument(
-        "--safe_serialization", default=True, type=bool, help="Whether or not to save using `safetensors`."
+        "--safe_serialization",
+        default=True,
+        type=bool,
+        help="Whether or not to save using `safetensors`.",
     )
     args = parser.parse_args()
 
