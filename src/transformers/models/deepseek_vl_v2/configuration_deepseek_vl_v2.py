@@ -34,7 +34,9 @@ class MlpProjectorConfig(PretrainedConfig):
         token_pooling: bool = False,
         **kwargs,
     ):
-        self.projector_type = projector_type if projector_type is not None else "downsample_mlp_gelu"
+        self.projector_type = (
+            projector_type if projector_type is not None else "downsample_mlp_gelu"
+        )
         self.input_dim = input_dim
         self.n_embed = n_embed
         self.depth = depth
@@ -74,11 +76,15 @@ class DeepseekVLV2Config(PretrainedConfig):
 
         if text_config is None:
             text_config = {}
-            logger.info("`text_config` is `None`. Initializing the `DeepseekV2Config` with default values.")
+            logger.info(
+                "`text_config` is `None`. Initializing the `DeepseekV2Config` with default values."
+            )
 
         if vision_config is None:
             vision_config = {}
-            logger.info("`vision_config` is `None`. Initializing the `SiglipVisionConfig` with default values.")
+            logger.info(
+                "`vision_config` is `None`. Initializing the `SiglipVisionConfig` with default values."
+            )
 
         if isinstance(text_config, dict):
             text_config["model_type"] = text_config.get("model_type", "deepseek_v2")
@@ -95,24 +101,5 @@ class DeepseekVLV2Config(PretrainedConfig):
         self.text_config = text_config
         self.vision_config = vision_config
         self.projector_config = projector_config
-
-        if getattr(self.text_config, "kv_lora_rank", None) is None:
-            self.text_config.kv_lora_rank = 512
-            logger.info("`kv_lora_rank` is `None`. Setting `kv_lora_rank` to 512.")
-
-        if getattr(self.text_config, "qk_rope_head_dim", None) is None:
-            self.text_config.qk_rope_head_dim = 64
-            logger.info("`qk_rope_head_dim` is `None`. Setting `qk_rope_head_dim` to 64.")
-
-        if getattr(self.text_config, "qk_nope_head_dim", None) is None or self.text_config.qk_nope_head_dim <= 0:
-            self.text_config.qk_nope_head_dim = 128
-            logger.info("`qk_nope_head_dim` missing or <=0. Setting to 128 for safety.")
-
-        if getattr(self.text_config, "v_head_dim", None) is None or self.text_config.v_head_dim <= 0:
-            self.text_config.v_head_dim = 128
-            logger.info("`v_head_dim` missing or <=0. Setting to 128 for safety.")
-
-        self.text_config.head_dim = self.text_config.qk_rope_head_dim
-
 
 __all__ = ["DeepseekVLV2Config"]

@@ -5,7 +5,7 @@
 #                          modular_deepseek_vl_v2.py file directly. One of our CI enforces this.
 #                🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨🚨
 from dataclasses import dataclass
-from typing import Optional, Union
+from typing import Optional, Union, List, Tuple
 
 import torch
 import torch.nn as nn
@@ -19,6 +19,7 @@ from ...modeling_utils import PreTrainedModel
 from ...utils import auto_docstring, can_return_tuple
 from ..auto import AutoModel
 from .configuration_deepseek_vl_v2 import DeepseekVLV2Config
+from transformers.modeling_outputs import CausalLMOutputWithPast
 
 
 class MlpProjector(nn.Module):
@@ -149,12 +150,18 @@ class DeepseekVLV2BaseModelOutputWithPast(ModelOutput):
         image_hidden_states of the model produced by the vision encoder, and optionally by the perceiver
     """
 
-    last_hidden_state: Optional[torch.FloatTensor] = None
-    past_key_values: Optional[Cache] = None
-    hidden_states: Optional[tuple[torch.FloatTensor]] = None
-    attentions: Optional[tuple[torch.FloatTensor]] = None
-    image_hidden_states: Optional[tuple[torch.FloatTensor]] = None
+    # last_hidden_state: Optional[torch.FloatTensor] = None
+    # past_key_values: Optional[Cache] = None
+    # hidden_states: Optional[tuple[torch.FloatTensor]] = None
+    # attentions: Optional[tuple[torch.FloatTensor]] = None
+    # image_hidden_states: Optional[tuple[torch.FloatTensor]] = None
 
+    loss: Optional[torch.FloatTensor] = None
+    logits: torch.FloatTensor = None
+    past_key_values: Optional[List[torch.FloatTensor]] = None
+    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    attentions: Optional[Tuple[torch.FloatTensor]] = None
+    rope_deltas: Optional[torch.LongTensor] = None
 
 # @auto_docstring
 class DeepseekVLV2Model(DeepseekVLV2PreTrainedModel):
@@ -323,6 +330,7 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel, GenerationMixin):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
         cache_position: Optional[torch.LongTensor] = None,
+        **kwargs,
     ):
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
@@ -362,7 +370,26 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel, GenerationMixin):
             cache_position=cache_position,
         )
 
-        return outputs
+        hidden_states = outputs.last_hidden_state
+        logits = self.lm_head(hidden_states)
+
+        loss = None
+        if labels is not None:
+            shift_logits = logits[..., :-1, :].contiguous()
+            shift_labels = labels[..., 1:].contiguous()
+            loss_fct = torch.nn.CrossEntropyLoss()
+            loss = loss_fct(
+                shift_logits.view(-1, shift_logits.size(-1)),
+                shift_labels.view(-1),
+            )
+
+        return DeepseekVLV2BaseModelOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+    )
 
     def prepare_inputs_for_generation(
         self,
@@ -379,7 +406,7 @@ class DeepseekVLV2ForCausalLM(DeepseekVLV2PreTrainedModel, GenerationMixin):
         num_logits_to_keep=None,
         **kwargs,
     ):
-        model_inputs = self.model.language_model.prepare_inputs_for_generation(
+        model_inputs = super().prepare_inputs_for_generation(
             input_ids,
             past_key_values=past_key_values,
             inputs_embeds=inputs_embeds,

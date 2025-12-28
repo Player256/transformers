@@ -18,6 +18,7 @@ from transformers import (
     DeepseekVLV2ImageProcessor,
     DeepseekVLV2Processor,
 )
+from transformers.models.deepseek_v2.configuration_deepseek_v2 import DeepseekV2Config
 from transformers.image_utils import IMAGENET_STANDARD_MEAN, IMAGENET_STANDARD_STD
 
 
@@ -44,7 +45,7 @@ ORIGINAL_TO_CONVERTED_KEY_MAPPING = {
     r"language.model.(\w+)":                   r"model.language_model.\1",
     r"language.lm_head.(weight|bias)":         r"model.lm_head.\1",
     r"image_newline":                          r"model.image_newline",
-    r"view_seperator":                         r"model.view_separator",
+    r"view_seperator":                         r"model.view_seperator",
 }
 # fmt: on
 
@@ -188,13 +189,14 @@ def convert_model(
 
     tokenizer = AutoTokenizer.from_pretrained(input_path)
 
-    if "<image>" not in tokenizer.additional_special_tokens:
-        tokenizer.add_special_tokens(
-            {
-                "additional_special_tokens": tokenizer.additional_special_tokens
-                + ["<image>"]
-            }
-        )
+    special_tokens = [
+        "<image>",
+        "<sft_begin>",
+        "<sft_end>",
+        "<end_of_sentence>",
+    ]
+
+    tokenizer.add_special_tokens({"additional_special_tokens": special_tokens})
 
     processor = DeepseekVLV2Processor(
         image_processor=image_processor,
@@ -222,7 +224,26 @@ def convert_model(
 
     vocab_size = state_dict["model.language_model.embed_tokens.weight"].shape[0]
     projector_output = state_dict["model.projector.layers.0.weight"].shape[0]
-
+    text_config = DeepseekV2Config(
+        vocab_size=129280,
+        hidden_size=1280,
+        intermediate_size=6848,
+        num_hidden_layers=12,
+        # attention
+        num_attention_heads=40,
+        num_key_value_heads=4,
+        qk_rope_head_dim=32,
+        qk_nope_head_dim=32,
+        v_head_dim=32,
+        kv_lora_rank=512,
+        use_mla=False,
+        # 🚫 DISABLE MoE COMPLETELY
+        n_shared_experts=None,
+        n_routed_experts=None,
+        num_experts_per_tok=None,
+        moe_layer_freq=None,
+        first_k_dense_replace=12,
+    )
     config = DeepseekVLV2Config(
         candidate_resolutions=[
             [384, 384],
@@ -250,41 +271,7 @@ def convert_model(
             [1152, 1152],
         ],
         global_view_pos="head",
-        text_config={
-            "architectures": ["DeepseekV2ForCausalLM"],
-            "auto_map": {
-                "AutoConfig": "configuration_deepseek.DeepseekV2Config",
-                "AutoModel": "modeling_deepseek.DeepseekV2Model",
-                "AutoModelForCausalLM": "modeling_deepseek.DeepseekV2ForCausalLM",
-            },
-            "bos_token_id": 0,
-            "eos_token_id": 1,
-            "first_k_dense_replace": 1,
-            "hidden_size": lang_hidden,
-            "intermediate_size": 6848,
-            "kv_lora_rank": None,
-            "lm_head": True,
-            "max_position_embeddings": 4096,
-            "model_type": "deepseek_v2",
-            "moe_intermediate_size": 896,
-            "n_group": 1,
-            "n_routed_experts": 64,
-            "n_shared_experts": 2,
-            "num_attention_heads": 10,
-            "num_experts_per_tok": 6,
-            "num_hidden_layers": 12,
-            "num_key_value_heads": 10,
-            "q_lora_rank": None,
-            "qk_nope_head_dim": 0,
-            "qk_rope_head_dim": 0,
-            "rm_head": False,
-            "topk_group": 1,
-            "topk_method": "greedy",
-            "torch_dtype": "bfloat16",
-            "use_mla": False,
-            "v_head_dim": 0,
-            "vocab_size": vocab_size,
-        },
+        text_config=text_config,
         model_type="deepseek_vl_v2",
         projector_config={
             "model_type": "mlp_projector",
