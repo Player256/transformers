@@ -187,7 +187,7 @@ class DeepseekVLV2Model(DeepseekVLV2PreTrainedModel):
 
     def get_image_features(self, pixel_values):
         image_embeds = self.vision_model(pixel_values)
-        image_embeds = self.aligner(image_embeds.last_hidden_state)
+        image_embeds = self.projector(image_embeds.last_hidden_state)
         return image_embeds
 
     def get_placeholder_mask(

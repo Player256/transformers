@@ -42,7 +42,19 @@ class DeepseekVLV2Processor(ProcessorMixin):
     ):
         # self.image_token = tokenizer.image_token
         self.image_token = "<image>"
+        self.tokenizer = tokenizer
         # self.num_image_tokens = num_image_tokens
+        SPECIAL_TOKENS = [
+            "<｜sft▁begin｜>",
+            "<｜sft▁end｜>",
+            "<｜end▁of▁sentence｜>",
+        ]
+
+        self.tokenizer.add_special_tokens({"additional_special_tokens": SPECIAL_TOKENS})
+        self.tokenizer.eos_token = "<｜end▁of▁sentence｜>"
+        self.tokenizer.eos_token_id = self.tokenizer.convert_tokens_to_ids(
+            "<｜end▁of▁sentence｜>"
+        )
 
         super().__init__(image_processor, tokenizer, chat_template=chat_template)
 
@@ -95,16 +107,22 @@ class DeepseekVLV2Processor(ProcessorMixin):
         for img in images:
             out = self.image_processor.preprocess(img)
             batch_pixel_values.append(out["pixel_values"])
-            batch_spatial_crops.append([out["num_width_tiles"], out["num_height_tiles"]])
+            batch_spatial_crops.append(
+                [out["num_width_tiles"], out["num_height_tiles"]]
+            )
 
         max_tiles = max(pv.shape[0] for pv in batch_pixel_values)
 
-        padded_pixel_values = torch.zeros(len(batch_pixel_values), max_tiles, 3, 384, 384)
+        padded_pixel_values = torch.zeros(
+            len(batch_pixel_values), max_tiles, 3, 384, 384
+        )
 
         for i, pv in enumerate(batch_pixel_values):
             padded_pixel_values[i, : pv.shape[0]] = pv
 
-        images_spatial_crop = torch.zeros(len(batch_spatial_crops), max_tiles, 2, dtype=torch.long)
+        images_spatial_crop = torch.zeros(
+            len(batch_spatial_crops), max_tiles, 2, dtype=torch.long
+        )
 
         for i, (w, h) in enumerate(batch_spatial_crops):
             images_spatial_crop[i, 0] = torch.tensor([w, h])

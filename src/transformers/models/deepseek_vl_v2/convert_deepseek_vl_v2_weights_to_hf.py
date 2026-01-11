@@ -176,12 +176,6 @@ def convert_model(
         # If the input path is not a HF repo ID, assume it's a local path
         input_path = hf_repo_id
 
-    # save config
-
-    # ------------------------------------------------------------
-    # Convert processor
-    # ------------------------------------------------------------
-
     image_processor = DeepseekVLV2ImageProcessor(
         image_mean=IMAGENET_STANDARD_MEAN,
         image_std=IMAGENET_STANDARD_STD,
@@ -189,12 +183,7 @@ def convert_model(
 
     tokenizer = AutoTokenizer.from_pretrained(input_path)
 
-    special_tokens = [
-        "<image>",
-        "<sft_begin>",
-        "<sft_end>",
-        "<end_of_sentence>",
-    ]
+    special_tokens = ["<|User|>", "<|Assistant|>"]
 
     tokenizer.add_special_tokens({"additional_special_tokens": special_tokens})
 
@@ -237,7 +226,6 @@ def convert_model(
         v_head_dim=32,
         kv_lora_rank=512,
         use_mla=False,
-        # 🚫 DISABLE MoE COMPLETELY
         n_shared_experts=None,
         n_routed_experts=None,
         num_experts_per_tok=None,
